@@ -17,11 +17,11 @@ namespace DarkVault.ThrusterExtensions
         private MyThrust m_thrust;
         private RecolorableThrustFlameLogic m_gameLogic;
 
-        private Vector3 m_colorMaskHsv;
+        private Vector3 m_originalColorMaskHsv;
 
         public RecolorableThrusterRenderComponent(MyRenderComponentBase oldRenderer)
         {
-            m_colorMaskHsv = oldRenderer.ColorMaskHsv;
+            m_originalColorMaskHsv = oldRenderer.ColorMaskHsv;
         }
 
         public override void OnAddedToContainer()
@@ -31,7 +31,7 @@ namespace DarkVault.ThrusterExtensions
             m_thrust = (base.Container.Entity as MyThrust);
             m_gameLogic = m_thrust.GameLogic.GetAs<RecolorableThrustFlameLogic>();
 
-            ColorMaskHsv = m_colorMaskHsv;
+            ColorMaskHsv = m_originalColorMaskHsv;
         }
 
         public override void OnBeforeRemovedFromContainer()
