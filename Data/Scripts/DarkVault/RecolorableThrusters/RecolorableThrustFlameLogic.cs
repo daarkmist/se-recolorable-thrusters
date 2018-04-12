@@ -18,6 +18,8 @@ namespace DarkVault.ThrusterExtensions
     public class RecolorableThrustFlameLogic : MyGameLogicComponent
     {
 
+        private static readonly string _CUSTOM_DATA_SECTION = "FlameColors";
+
         public Vector4 FlameIdleColor
         {
             get { return m_flameIdleColor; }
@@ -47,6 +49,7 @@ namespace DarkVault.ThrusterExtensions
         private Vector4 m_flameIdleColor;
         private Vector4 m_flameFullColor;
         private bool m_flameColorsLocked;
+        private bool m_flameColorsLinked = true;
         private IMyThrust m_thruster;
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
@@ -58,12 +61,55 @@ namespace DarkVault.ThrusterExtensions
             m_thruster.Components.Remove(typeof(MyRenderComponentBase));
             m_thruster.Components.Add(typeof(MyRenderComponentBase), new RecolorableThrusterRenderComponent(oldRenderer));
 
-            InitFlameColors();
+            var blockDefinition = m_thruster.SlimBlock.BlockDefinition as MyThrustDefinition;
+
+            m_flameIdleColor = blockDefinition.FlameIdleColor;
+            m_flameFullColor = blockDefinition.FlameFullColor;
+            
+            OnCustomDataChanged(m_thruster);
 
             lock (m_customControls)
             {
                 if (m_customControls.Count == 0)
                     CreateTerminalControls();
+            }
+
+            m_thruster.CustomDataChanged += OnCustomDataChanged;
+        }
+
+        public override void MarkForClose()
+        {
+            m_thruster.CustomDataChanged -= OnCustomDataChanged;
+        }
+
+        public void OnCustomDataChanged(IMyTerminalBlock block)
+        {
+            var settings = new Dictionary<string, List<string>>();
+            ParseCustomData(ref settings);
+
+            if (settings.ContainsKey(_CUSTOM_DATA_SECTION))
+            {
+                var lines = settings[_CUSTOM_DATA_SECTION];
+
+                if (lines != null)
+                {
+                    m_flameIdleColor = ParseVector(lines[0], m_flameIdleColor);
+                    m_flameFullColor = ParseVector(lines[1], m_flameFullColor);
+                    
+                    if (lines.Count > 2)
+                        m_flameColorsLocked = bool.Parse(lines[2]);
+
+                    if (lines.Count > 3)
+                        m_flameColorsLinked = bool.Parse(lines[3]);
+                }
+
+                if (m_flameColorsLinked)
+                    m_flameFullColor = m_flameIdleColor;
+
+                foreach (var control in m_customControls)
+                {
+                    control.UpdateVisual();
+                }
             }
         }
 
@@ -117,6 +163,15 @@ namespace DarkVault.ThrusterExtensions
                     logic.m_flameIdleColor = value.ToVector4();
                     logic.m_flameIdleColor.W = 0.75f;
 
+                    if (logic.m_flameColorsLinked)
+                        logic.m_flameFullColor = logic.m_flameIdleColor;
+
+                    foreach (var control in m_customControls)
+                    {
+                        if (control.Id == "FlameFullColor")
+                            control.UpdateVisual();
+                    }
+
                     logic.UpdateCustomData();
                 }
             };
@@ -145,6 +200,9 @@ namespace DarkVault.ThrusterExtensions
                 if (logic != null)
                 {
                     logic.FlameIdleColor = new Vector4(value.X, value.Y, value.Z, 0.75f);
+                    
+                    if (logic.m_flameColorsLinked)
+                        logic.FlameFullColor = logic.FlameIdleColor;
                 }
             };
 
@@ -155,6 +213,11 @@ namespace DarkVault.ThrusterExtensions
             color = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlColor, IMyThrust>("FlameFullColor");
 
             color.Title = MyStringId.GetOrCompute("Full");
+            color.Enabled = (block) =>
+            {
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+                return logic != null ? !logic.m_flameColorsLinked : false; 
+            };
 
             color.Getter = (block) =>
             {
@@ -196,11 +259,46 @@ namespace DarkVault.ThrusterExtensions
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 
-                if (logic != null)
+                if (logic != null && !logic.m_flameColorsLinked)
                 {
                     logic.FlameFullColor = new Vector4(value.X, value.Y, value.Z, 0.75f);
                 }
             };
+
+            IMyTerminalControlCheckbox linkColorsCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyThrust>("LinkFlameColors");
+
+            linkColorsCheckbox.Title = MyStringId.GetOrCompute("Link Idle And Full Colors");
+            linkColorsCheckbox.Getter = (block) =>
+            {
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+
+                return logic != null ? logic.m_flameColorsLinked : true;
+            };
+
+            linkColorsCheckbox.Setter = (block, value) =>
+            {
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+
+                if (logic != null)
+                {
+                    logic.m_flameColorsLinked = value;
+
+                    if (value)
+                        logic.m_flameFullColor = logic.m_flameIdleColor;
+
+                    logic.UpdateCustomData();
+
+                    foreach (var control in m_customControls)
+                    {
+                        if (control.Id == "FlameFullColor")
+                            control.UpdateVisual();
+                    }
+                }
+            };
+
+            linkColorsCheckbox.SupportsMultipleBlocks = true;
+
+            m_customControls.Add(linkColorsCheckbox);
 
             MyAPIGateway.TerminalControls.AddControl<IMyThrust>(propertyFC);
 
@@ -214,15 +312,17 @@ namespace DarkVault.ThrusterExtensions
                 
                 if (logic != null)
                 {
-                    var blockDefinition = m_thruster.SlimBlock.BlockDefinition as MyThrustDefinition;
+                    var blockDefinition = block.SlimBlock.BlockDefinition as MyThrustDefinition;
 
-                    m_flameIdleColor = blockDefinition.FlameIdleColor;
-                    m_flameFullColor = blockDefinition.FlameFullColor;
+                    logic.m_flameIdleColor = blockDefinition.FlameIdleColor;
+                    logic.m_flameFullColor = blockDefinition.FlameFullColor;
+
+                    if (logic.m_flameFullColor != logic.m_flameIdleColor)                    
+                        logic.m_flameColorsLinked = false;
 
                     foreach (var control in m_customControls)
                     {
-                        if (control is IMyTerminalControlColor)
-                            control.UpdateVisual();
+                        control.UpdateVisual();
                     }
 
                     logic.UpdateCustomData();
@@ -234,30 +334,43 @@ namespace DarkVault.ThrusterExtensions
             m_customControls.Add(resetButton);
         }
 
-        private void InitFlameColors()
+        private void ParseCustomData(ref Dictionary<string, List<string>> settings)
         {
-            var blockDefinition = m_thruster.SlimBlock.BlockDefinition as MyThrustDefinition;
+            if (m_thruster == null)
+                return;
 
-            m_flameIdleColor = blockDefinition.FlameIdleColor;
-            m_flameFullColor = blockDefinition.FlameFullColor;
+            settings.Clear();
 
-            string[] lines = m_thruster.CustomData.Split('\n');
-
-            for (int i = 0; i < lines.Length; i++)
+            if (m_thruster.CustomData.Length > 0)
             {
-                if (lines[i] == "[FlameColors]")
+                string[] lines = m_thruster.CustomData.Split('\n');
+                string sectionName = null;
+                List<string> sectionData = null;
+                
+                for (int i = 0; i < lines.Length; i++)
                 {
-                    if (i + 1 < lines.Length)
-                        m_flameIdleColor = ParseVector(lines[i + 1], m_flameIdleColor);
+                    string line = lines[i].Trim();
+                    
+                    if (line.StartsWith("["))
+                    {
+                        if (sectionData != null)
+                            settings.Add(sectionName, sectionData);
+                        
+                        sectionName = line.Substring(1, line.Length - 2);
+                        sectionData = new List<string>();
 
-                    if (i + 2 < lines.Length)
-                        m_flameFullColor = ParseVector(lines[i + 2], m_flameFullColor);
+                        continue;
+                    }
 
-                    if (i + 3 < lines.Length && lines[i + 3].Length > 0)
-                        m_flameColorsLocked = bool.Parse(lines[i + 3]);
+                    if (line.Length == 0)
+                        continue;
 
-                    break;
+                    if (sectionData != null)
+                        sectionData.Add(line);
                 }
+
+                if (sectionData != null)
+                    settings.Add(sectionName, sectionData);
             }
         }
 
@@ -282,6 +395,7 @@ namespace DarkVault.ThrusterExtensions
             sb.Append(v.Y.ToString("N"));
             sb.Append("/");
             sb.Append(v.Z.ToString("N"));
+            sb.Append("\n");
         }
 
         private void UpdateCustomData()
@@ -290,43 +404,31 @@ namespace DarkVault.ThrusterExtensions
                 return;
 
             StringBuilder sb = new StringBuilder();
+            Dictionary<string, List<string>> settings = new Dictionary<string, List<string>>();
 
-            if (m_thruster.CustomData.Length > 0)
+            ParseCustomData(ref settings);
+            
+            settings.Remove(_CUSTOM_DATA_SECTION);
+
+            foreach (var key in settings.Keys)
             {
-                string[] lines = m_thruster.CustomData.Split('\n');
+                List<string> lines = settings[key];
 
-                int i = 0;
-                while (i < lines.Length)
-                {
-                    if (lines[i] == "[FlameColors]")
-                    {
-                        i += 3;
+                sb.Append($"[{key}]\n");
 
-                        if (lines[i] == "True" || lines[i] == "False")
-                            i++;
-
-                        continue;
-                    }
-
-                    if (lines[i].Length > 0)
-                    {
-                        sb.Append(lines[i]);
-                        sb.Append("\n");
-                    }
-
-                    i++;
-                }
+                foreach (var line in lines)
+                    sb.Append($"{line}\n");
             }
 
-            sb.Append("[FlameColors]\n");
+            sb.Append($"[{_CUSTOM_DATA_SECTION}]\n");
             SerializeVector(FlameIdleColor, sb);
-            sb.Append("\n");
             SerializeVector(FlameFullColor, sb);
-            sb.Append("\n");
-            sb.Append(m_flameColorsLocked);
-            sb.Append("\n");
+            sb.Append($"{m_flameColorsLocked}\n");
+            sb.Append($"{m_flameColorsLinked}\n");
 
+            m_thruster.CustomDataChanged -= OnCustomDataChanged;
             m_thruster.CustomData = sb.ToString();
+            m_thruster.CustomDataChanged += OnCustomDataChanged;
         }
 
         private static void CustomControlGetter(IMyTerminalBlock block, List<IMyTerminalControl> controls)
