@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
+using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Interfaces.Terminal;
 using VRage.Game;
@@ -459,6 +460,11 @@ namespace DarkVault.ThrusterExtensions
         {
             if (block is IMyThrust)
             {
+                // We don't want to show controls if the thruster doesn't have flames (e.g. hover engines)
+
+                if (((MyThrust)block).Flames.Count == 0)
+                    return;
+
                 foreach (var item in m_customControls)
                 {
                     controls.Add(item);
