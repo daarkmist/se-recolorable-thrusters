@@ -51,6 +51,7 @@ namespace DarkVault.ThrusterExtensions
         private bool m_flameColorsLocked;
         private bool m_flameColorsLinked = true;
         private IMyThrust m_thruster;
+        private bool m_initialized = false;
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
@@ -66,15 +67,17 @@ namespace DarkVault.ThrusterExtensions
             m_flameIdleColor = blockDefinition.FlameIdleColor;
             m_flameFullColor = blockDefinition.FlameFullColor;
             
-            OnCustomDataChanged(m_thruster);
-
             lock (m_customControls)
             {
                 if (m_customControls.Count == 0)
                     CreateTerminalControls();
             }
 
+            OnCustomDataChanged(m_thruster);
+
             m_thruster.CustomDataChanged += OnCustomDataChanged;
+
+            m_initialized = true;
         }
 
         public override void MarkForClose()
@@ -106,9 +109,12 @@ namespace DarkVault.ThrusterExtensions
                 if (m_flameColorsLinked)
                     m_flameFullColor = m_flameIdleColor;
 
-                foreach (var control in m_customControls)
+                if (m_initialized)
                 {
-                    control.UpdateVisual();
+                    foreach (var control in m_customControls)
+                    {
+                        control.UpdateVisual();
+                    }
                 }
             }
         }
@@ -125,6 +131,9 @@ namespace DarkVault.ThrusterExtensions
             checkbox.Title = MyStringId.GetOrCompute("Lock Flame Colors");
             checkbox.Getter = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return false;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
 
                 return logic != null ? logic.m_flameColorsLocked : false;
@@ -150,6 +159,9 @@ namespace DarkVault.ThrusterExtensions
 
             color.Getter = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return (Vector4)Color.Black;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 return logic != null ? logic.m_flameIdleColor : (Vector4)Color.Black; 
             };
@@ -183,16 +195,16 @@ namespace DarkVault.ThrusterExtensions
             propertyIC.SupportsMultipleBlocks = false;
             propertyIC.Getter = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return Vector4.Zero;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 return logic != null ? logic.FlameIdleColor : Vector4.Zero;
             };
 
             propertyIC.Setter = (block, value) =>
             {
-                if (block == null)
-                    return;
-
-                if (block.GameLogic == null)
+                if (block == null || block.GameLogic == null)
                     return;
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
@@ -215,12 +227,18 @@ namespace DarkVault.ThrusterExtensions
             color.Title = MyStringId.GetOrCompute("Full");
             color.Enabled = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return false;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 return logic != null ? !logic.m_flameColorsLinked : false; 
             };
 
             color.Getter = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return (Vector4)Color.Black;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 return logic != null ? logic.m_flameFullColor : (Vector4)Color.Black; 
             };
@@ -245,16 +263,16 @@ namespace DarkVault.ThrusterExtensions
             propertyFC.SupportsMultipleBlocks = false;
             propertyFC.Getter = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return Vector4.Zero;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 return logic != null ? logic.FlameFullColor : Vector4.Zero;
             };
 
             propertyFC.Setter = (block, value) =>
             {
-                if (block == null)
-                    return;
-
-                if (block.GameLogic == null)
+                if (block == null || block.GameLogic == null)
                     return;
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
@@ -270,6 +288,9 @@ namespace DarkVault.ThrusterExtensions
             linkColorsCheckbox.Title = MyStringId.GetOrCompute("Link Idle And Full Colors");
             linkColorsCheckbox.Getter = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return true;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
 
                 return logic != null ? logic.m_flameColorsLinked : true;
@@ -308,6 +329,9 @@ namespace DarkVault.ThrusterExtensions
 
             resetButton.Action = (block) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 
                 if (logic != null)
