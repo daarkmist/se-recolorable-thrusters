@@ -145,7 +145,11 @@ namespace DarkVault.ThrusterExtensions
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
 
                 if (logic != null)
+                {
                     logic.m_flameColorsLocked = value;
+
+                    logic.UpdateCustomData();
+                }
             };
 
             checkbox.SupportsMultipleBlocks = true;
