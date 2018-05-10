@@ -45,12 +45,25 @@ namespace DarkVault.ThrusterExtensions
             }
         }
 
+        public bool HideThrustFlames
+        {
+            get { return m_hideFlames; }
+            set
+            {
+                if (!m_flameColorsLocked)
+                    m_hideFlames = value;
+
+                    UpdateCustomData();
+            }
+        }
+
         private static List<IMyTerminalControl> m_customControls = new List<IMyTerminalControl>();
 
         private Vector4 m_flameIdleColor;
         private Vector4 m_flameFullColor;
         private bool m_flameColorsLocked;
         private bool m_flameColorsLinked = true;
+        private bool m_hideFlames = false;
         private IMyThrust m_thruster;
         private bool m_initialized = false;
 
@@ -105,6 +118,9 @@ namespace DarkVault.ThrusterExtensions
 
                     if (lines.Count > 3)
                         m_flameColorsLinked = bool.Parse(lines[3]);
+
+                    if (lines.Count > 4)
+                        m_hideFlames = bool.Parse(lines[4]);
                 }
 
                 if (m_flameColorsLinked)
@@ -288,6 +304,8 @@ namespace DarkVault.ThrusterExtensions
                 }
             };
 
+            MyAPIGateway.TerminalControls.AddControl<IMyThrust>(propertyFC);
+
             IMyTerminalControlCheckbox linkColorsCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyThrust>("LinkFlameColors");
 
             linkColorsCheckbox.Title = MyStringId.GetOrCompute("Link Idle And Full Colors");
@@ -326,7 +344,61 @@ namespace DarkVault.ThrusterExtensions
 
             m_customControls.Add(linkColorsCheckbox);
 
-            MyAPIGateway.TerminalControls.AddControl<IMyThrust>(propertyFC);
+            var hideFlamesCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyThrust>("HideThrustFlames");
+
+            hideFlamesCheckbox.Title = MyStringId.GetOrCompute("Hide Thrust Flames");
+            hideFlamesCheckbox.Getter = (block) =>
+            {
+                if (block == null || block.GameLogic == null)
+                    return false;
+
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+
+                return logic != null ? logic.m_hideFlames : false;
+            };
+
+            hideFlamesCheckbox.Setter = (block, value) =>
+            {
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+
+                if (logic != null)
+                {
+                    logic.m_hideFlames = value;
+
+                    logic.UpdateCustomData();
+                }
+            };
+
+            hideFlamesCheckbox.SupportsMultipleBlocks = true;
+
+            m_customControls.Add(hideFlamesCheckbox);
+
+            var propertyHF = MyAPIGateway.TerminalControls.CreateProperty<bool, IMyThrust>("HideThrustFlames");
+                  
+            propertyHF.SupportsMultipleBlocks = false;
+            propertyHF.Getter = (block) =>
+            {
+                if (block == null || block.GameLogic == null)
+                    return false;
+
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+                return logic != null ? logic.HideThrustFlames : false;
+            };
+
+            propertyHF.Setter = (block, value) =>
+            {
+                if (block == null || block.GameLogic == null)
+                    return;
+
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+                
+                if (logic != null)
+                {
+                    logic.HideThrustFlames = value;
+                }
+            };
+
+            MyAPIGateway.TerminalControls.AddControl<IMyThrust>(propertyHF);
 
             var resetButton = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlButton, IMyThrust>("ResetDefaultColors");
 
@@ -454,6 +526,7 @@ namespace DarkVault.ThrusterExtensions
             SerializeVector(FlameFullColor, sb);
             sb.Append($"{m_flameColorsLocked}\n");
             sb.Append($"{m_flameColorsLinked}\n");
+            sb.Append($"{m_hideFlames}\n");
 
             m_thruster.CustomDataChanged -= OnCustomDataChanged;
             m_thruster.CustomData = sb.ToString();

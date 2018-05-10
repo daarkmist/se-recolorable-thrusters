@@ -45,7 +45,7 @@ namespace DarkVault.ThrusterExtensions
             
             if (m_thrust.Flames.Count > 0 && m_thrust.CubeGrid.Physics != null)
             {
-                if (m_thrust.IsWorking)
+                if (m_thrust.IsWorking && !m_gameLogic.HideThrustFlames)
                 {
                     UpdateFlameAndColor();
 
@@ -91,6 +91,12 @@ namespace DarkVault.ThrusterExtensions
 
                 if (m_thrust.Light != null)
                 {
+                    if (m_gameLogic.HideThrustFlames) {
+                        m_thrust.ThrustRadiusRand = 0f;
+			            m_thrust.ThrustLengthRand = 0f;
+			            m_thrust.ThrustThicknessRand = 0f;
+                    }
+                    
                     m_thrust.UpdateLight();
                 }
             }
