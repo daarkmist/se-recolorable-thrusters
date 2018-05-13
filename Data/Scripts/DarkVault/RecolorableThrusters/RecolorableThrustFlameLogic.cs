@@ -27,9 +27,11 @@ namespace DarkVault.ThrusterExtensions
             set
             {
                 if (!m_flameColorsLocked)
+                {
                     m_flameIdleColor = value;
 
                     UpdateCustomData();
+                }
             }
         }
 
@@ -39,9 +41,11 @@ namespace DarkVault.ThrusterExtensions
             set
             {
                 if (!m_flameColorsLocked)
+                {
                     m_flameFullColor = value;
 
                     UpdateCustomData();
+                }
             }
         }
 
@@ -51,9 +55,11 @@ namespace DarkVault.ThrusterExtensions
             set
             {
                 if (!m_flameColorsLocked)
+                {
                     m_hideFlames = value;
 
                     UpdateCustomData();
+                }
             }
         }
 
@@ -120,7 +126,9 @@ namespace DarkVault.ThrusterExtensions
                         m_flameColorsLinked = bool.Parse(lines[3]);
 
                     if (lines.Count > 4)
+                    {
                         m_hideFlames = bool.Parse(lines[4]);
+                    }
                 }
 
                 if (m_flameColorsLinked)
