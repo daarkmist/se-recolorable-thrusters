@@ -15,6 +15,9 @@
     <Reference Include="Sandbox.Common.dll">
       <HintPath>D:\Games\Steam\steamapps\common\SpaceEngineers\Bin64\Sandbox.Common.dll</HintPath>
     </Reference>
+    <Reference Include="Sandbox.RenderDirect.dll">
+      <HintPath>D:\Games\Steam\steamapps\common\SpaceEngineers\Bin64\Sandbox.RenderDirect.dll</HintPath>
+    </Reference>
     <Reference Include="Sandbox.Game.dll">
       <HintPath>D:\Games\Steam\steamapps\common\SpaceEngineers\Bin64\Sandbox.Game.dll</HintPath>
     </Reference>

@@ -3,14 +3,19 @@ using System.Collections.Generic;
 using System.Text;
 using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
+using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Interfaces.Terminal;
 using VRage.Game;
 using VRage.Game.Components;
+using VRage.Game.ModAPI;
+using VRage.ModAPI;
 using VRage.ObjectBuilders;
 using VRage.Utils;
 using VRageMath;
+using VRageRender;
+using VRageRender.Import;
 
 namespace DarkVault.ThrusterExtensions
 {
@@ -63,6 +68,11 @@ namespace DarkVault.ThrusterExtensions
             }
         }
 
+        public bool HasFlames
+        {
+            get { return m_hasFlames; }
+        }
+
         private static List<IMyTerminalControl> m_customControls = new List<IMyTerminalControl>();
 
         private Vector4 m_flameIdleColor;
@@ -72,15 +82,11 @@ namespace DarkVault.ThrusterExtensions
         private bool m_hideFlames = false;
         private IMyThrust m_thruster;
         private bool m_initialized = false;
+        private bool m_hasFlames = false;
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
             m_thruster = Entity as IMyThrust;
-
-            var oldRenderer = m_thruster.Render;
-
-            m_thruster.Components.Remove(typeof(MyRenderComponentBase));
-            m_thruster.Components.Add(typeof(MyRenderComponentBase), new RecolorableThrusterRenderComponent(oldRenderer));
 
             var blockDefinition = m_thruster.SlimBlock.BlockDefinition as MyThrustDefinition;
 
@@ -97,7 +103,15 @@ namespace DarkVault.ThrusterExtensions
 
             m_thruster.CustomDataChanged += OnCustomDataChanged;
 
+            NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
+
             m_initialized = true;
+        }
+
+        public override void UpdateOnceBeforeFrame()
+        {
+            LoadFlameDummies();
+            UpdateFlames();
         }
 
         public override void MarkForClose()
@@ -141,6 +155,8 @@ namespace DarkVault.ThrusterExtensions
                         control.UpdateVisual();
                     }
                 }
+
+                UpdateFlames();
             }
         }
 
@@ -172,6 +188,7 @@ namespace DarkVault.ThrusterExtensions
                 {
                     logic.m_flameColorsLocked = value;
 
+                    logic.UpdateFlames();
                     logic.UpdateCustomData();
                 }
             };
@@ -213,6 +230,7 @@ namespace DarkVault.ThrusterExtensions
                             control.UpdateVisual();
                     }
 
+                    logic.UpdateFlames();
                     logic.UpdateCustomData();
                 }
             };
@@ -281,6 +299,7 @@ namespace DarkVault.ThrusterExtensions
                     logic.m_flameFullColor = value.ToVector4();
                     logic.m_flameFullColor.W = 0.75f;
 
+                    logic.UpdateFlames();
                     logic.UpdateCustomData();
                 }
             };
@@ -338,6 +357,7 @@ namespace DarkVault.ThrusterExtensions
                     if (value)
                         logic.m_flameFullColor = logic.m_flameIdleColor;
 
+                    logic.UpdateFlames();
                     logic.UpdateCustomData();
 
                     foreach (var control in m_customControls)
@@ -373,6 +393,7 @@ namespace DarkVault.ThrusterExtensions
                 {
                     logic.m_hideFlames = value;
 
+                    logic.UpdateFlames();
                     logic.UpdateCustomData();
                 }
             };
@@ -434,6 +455,7 @@ namespace DarkVault.ThrusterExtensions
                         control.UpdateVisual();
                     }
 
+                    logic.UpdateFlames();
                     logic.UpdateCustomData();
                 }
             };
@@ -441,6 +463,27 @@ namespace DarkVault.ThrusterExtensions
             resetButton.SupportsMultipleBlocks = true;
             
             m_customControls.Add(resetButton);
+        }
+
+        private void LoadFlameDummies()
+        {
+            IMyModel model = Entity.Model;
+            if (model == null)
+                return;
+
+            Dictionary<string, IMyModelDummy> dummies = new Dictionary<string, IMyModelDummy>();
+            model.GetDummies(dummies);
+
+            foreach (string dummy in dummies.Keys)
+		    {
+			    if (dummy.StartsWith("thruster_flame", StringComparison.InvariantCultureIgnoreCase))
+			    {
+                    m_hasFlames = true;
+                    return;
+			    }
+		    }
+
+            m_hasFlames = false;
         }
 
         private void ParseCustomData(ref Dictionary<string, List<string>> settings)
@@ -541,14 +584,51 @@ namespace DarkVault.ThrusterExtensions
             m_thruster.CustomDataChanged += OnCustomDataChanged;
         }
 
+        private void UpdateFlames()
+        {
+            var thrust = m_thruster as MyThrust;
+
+            if (thrust == null || thrust.CubeGrid.Physics == null || thrust.Light == null)
+                return;
+
+            uint renderObjectID = Entity.Render.GetRenderObjectID();
+            if (renderObjectID == 4294967295u)
+                return;
+
+            MyThrustDefinition blockDefinition = thrust.BlockDefinition;
+
+            Vector4 flameIdleColor = blockDefinition.FlameIdleColor;
+            Vector4 flameFullColor = blockDefinition.FlameFullColor;
+
+            if (m_hideFlames)
+            {
+                blockDefinition.FlameIdleColor = Vector4D.Zero;
+                blockDefinition.FlameFullColor = Vector4D.Zero;
+            }
+            else
+            {
+                blockDefinition.FlameIdleColor = m_flameIdleColor;
+                blockDefinition.FlameFullColor = m_flameFullColor;
+            }
+
+            ((MyRenderComponentThrust)thrust.Render).UpdateFlameAnimatorData();
+
+            blockDefinition.FlameIdleColor = flameIdleColor;
+            blockDefinition.FlameFullColor = flameFullColor;
+        }
+
         private static void CustomControlGetter(IMyTerminalBlock block, List<IMyTerminalControl> controls)
         {
             if (block is IMyThrust)
             {
                 // We don't want to show controls if the thruster doesn't have flames (e.g. hover engines)
 
-                if (((MyThrust)block).Flames.Count == 0)
-                    return;
+                if (block.GameLogic != null && block.GameLogic is RecolorableThrustFlameLogic)
+                {
+                    var logic = block.GameLogic as RecolorableThrustFlameLogic;
+                    if (!logic.HasFlames)
+                        return;
+                }
 
                 foreach (var item in m_customControls)
                 {
