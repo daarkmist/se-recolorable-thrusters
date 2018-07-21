@@ -5,11 +5,13 @@ using Sandbox.Common.ObjectBuilders;
 using Sandbox.Definitions;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Cube;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Interfaces.Terminal;
 using VRage.Game;
 using VRage.Game.Components;
 using VRage.Game.ModAPI;
+using VRage.Game.Models;
 using VRage.ModAPI;
 using VRage.ObjectBuilders;
 using VRage.Utils;
@@ -83,6 +85,7 @@ namespace DarkVault.ThrusterExtensions
         private IMyThrust m_thruster;
         private bool m_initialized = false;
         private bool m_hasFlames = false;
+        private float m_buildRatio;
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
         {
@@ -101,7 +104,9 @@ namespace DarkVault.ThrusterExtensions
 
             OnCustomDataChanged(m_thruster);
 
+            m_buildRatio = m_thruster.SlimBlock.BuildLevelRatio;
             m_thruster.CustomDataChanged += OnCustomDataChanged;
+            m_thruster.CubeGrid.OnBlockIntegrityChanged += OnIntegrityChanged;
 
             NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
 
@@ -117,6 +122,7 @@ namespace DarkVault.ThrusterExtensions
         public override void MarkForClose()
         {
             m_thruster.CustomDataChanged -= OnCustomDataChanged;
+            m_thruster.CubeGrid.OnBlockIntegrityChanged -= OnIntegrityChanged;
         }
 
         public void OnCustomDataChanged(IMyTerminalBlock block)
@@ -158,6 +164,21 @@ namespace DarkVault.ThrusterExtensions
 
                 UpdateFlames();
             }
+        }
+
+        public void OnIntegrityChanged(IMySlimBlock block)
+        {
+            var thrust = m_thruster as MyThrust;
+            var blockDefinition = thrust.BlockDefinition;
+
+            if (blockDefinition.ModelChangeIsNeeded(m_buildRatio, block.BuildLevelRatio) ||
+                blockDefinition.ModelChangeIsNeeded(block.BuildLevelRatio, m_buildRatio))
+            {
+                LoadFlameDummies();
+                UpdateFlames();
+            }
+
+            m_buildRatio = block.BuildLevelRatio;
         }
 
         private void CreateTerminalControls()
@@ -482,7 +503,7 @@ namespace DarkVault.ThrusterExtensions
                     return;
 			    }
 		    }
-
+            
             m_hasFlames = false;
         }
 
@@ -587,7 +608,6 @@ namespace DarkVault.ThrusterExtensions
         private void UpdateFlames()
         {
             var thrust = m_thruster as MyThrust;
-
             if (thrust == null || thrust.CubeGrid.Physics == null || thrust.Light == null)
                 return;
 
