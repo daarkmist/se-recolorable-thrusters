@@ -6,6 +6,7 @@ using Sandbox.Definitions;
 using Sandbox.Game.Components;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Cube;
+using Sandbox.Game.EntityComponents;
 using Sandbox.ModAPI;
 using Sandbox.ModAPI.Interfaces.Terminal;
 using VRage.Game;
@@ -27,6 +28,11 @@ namespace DarkVault.ThrusterExtensions
     {
 
         private static readonly string _CUSTOM_DATA_SECTION = "FlameColors";
+
+        private enum RenderMode
+        {
+            Linked, Blended, Separate
+        }
 
         public Vector4 FlameIdleColor
         {
@@ -80,7 +86,7 @@ namespace DarkVault.ThrusterExtensions
         private Vector4 m_flameIdleColor;
         private Vector4 m_flameFullColor;
         private bool m_flameColorsLocked;
-        private bool m_flameColorsLinked = true;
+        private RenderMode m_renderMode = RenderMode.Linked;
         private bool m_hideFlames = false;
         private IMyThrust m_thruster;
         private bool m_initialized = false;
@@ -108,7 +114,7 @@ namespace DarkVault.ThrusterExtensions
             m_thruster.CustomDataChanged += OnCustomDataChanged;
             m_thruster.CubeGrid.OnBlockIntegrityChanged += OnIntegrityChanged;
 
-            NeedsUpdate |= MyEntityUpdateEnum.BEFORE_NEXT_FRAME;
+            NeedsUpdate |= (MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME);
 
             m_initialized = true;
         }
@@ -127,6 +133,7 @@ namespace DarkVault.ThrusterExtensions
 
         public void OnCustomDataChanged(IMyTerminalBlock block)
         {
+            var updateSettings = false;
             var settings = new Dictionary<string, List<string>>();
             ParseCustomData(ref settings);
 
@@ -143,7 +150,18 @@ namespace DarkVault.ThrusterExtensions
                         m_flameColorsLocked = bool.Parse(lines[2]);
 
                     if (lines.Count > 3)
-                        m_flameColorsLinked = bool.Parse(lines[3]);
+                    {
+                        bool oldLinkedValue;
+                        if (bool.TryParse(lines[3], out oldLinkedValue))
+                        {
+                            m_renderMode = RenderMode.Linked;
+                            updateSettings = true;
+                        } 
+                        else
+                        {
+                            m_renderMode = (RenderMode)Enum.Parse(typeof(RenderMode), lines[3]);
+                        }
+                    }
 
                     if (lines.Count > 4)
                     {
@@ -151,7 +169,10 @@ namespace DarkVault.ThrusterExtensions
                     }
                 }
 
-                if (m_flameColorsLinked)
+                if (updateSettings)
+                    UpdateCustomData();
+
+                if (m_renderMode == RenderMode.Linked)
                     m_flameFullColor = m_flameIdleColor;
 
                 if (m_initialized)
@@ -164,6 +185,11 @@ namespace DarkVault.ThrusterExtensions
 
                 UpdateFlames();
             }
+        }
+
+        public override void UpdateAfterSimulation10()
+        {
+            UpdateFlames();
         }
 
         public void OnIntegrityChanged(IMySlimBlock block)
@@ -242,7 +268,7 @@ namespace DarkVault.ThrusterExtensions
                     logic.m_flameIdleColor = value.ToVector4();
                     logic.m_flameIdleColor.W = 0.75f;
 
-                    if (logic.m_flameColorsLinked)
+                    if (logic.m_renderMode == RenderMode.Linked)
                         logic.m_flameFullColor = logic.m_flameIdleColor;
 
                     foreach (var control in m_customControls)
@@ -281,7 +307,7 @@ namespace DarkVault.ThrusterExtensions
                 {
                     logic.FlameIdleColor = new Vector4(value.X, value.Y, value.Z, 0.75f);
                     
-                    if (logic.m_flameColorsLinked)
+                    if (logic.m_renderMode == RenderMode.Linked)
                         logic.FlameFullColor = logic.FlameIdleColor;
                 }
             };
@@ -299,7 +325,7 @@ namespace DarkVault.ThrusterExtensions
                     return false;
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
-                return logic != null ? !logic.m_flameColorsLinked : false; 
+                return logic != null ? (logic.m_renderMode != RenderMode.Linked) : false; 
             };
 
             color.Getter = (block) =>
@@ -346,7 +372,7 @@ namespace DarkVault.ThrusterExtensions
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
                 
-                if (logic != null && !logic.m_flameColorsLinked)
+                if (logic != null && logic.m_renderMode != RenderMode.Linked)
                 {
                     logic.FlameFullColor = new Vector4(value.X, value.Y, value.Z, 0.75f);
                 }
@@ -354,28 +380,32 @@ namespace DarkVault.ThrusterExtensions
 
             MyAPIGateway.TerminalControls.AddControl<IMyThrust>(propertyFC);
 
-            IMyTerminalControlCheckbox linkColorsCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyThrust>("LinkFlameColors");
+            IMyTerminalControlSlider renderMode = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlSlider, IMyThrust>("FlameRenderMode");
 
-            linkColorsCheckbox.Title = MyStringId.GetOrCompute("Link Idle And Full Colors");
-            linkColorsCheckbox.Getter = (block) =>
+            renderMode.Title = MyStringId.GetOrCompute("Flame Render Mode");
+            renderMode.SetLimits(0, 2);
+            renderMode.Getter = (block) =>
             {
                 if (block == null || block.GameLogic == null)
-                    return true;
+                    return (int)m_renderMode;
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
 
-                return logic != null ? logic.m_flameColorsLinked : true;
+                return logic != null ? (int)logic.m_renderMode : 0;
             };
 
-            linkColorsCheckbox.Setter = (block, value) =>
+            renderMode.Setter = (block, value) =>
             {
+                if (block == null || block.GameLogic == null)
+                    return;
+
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
 
                 if (logic != null)
                 {
-                    logic.m_flameColorsLinked = value;
+                    logic.m_renderMode = (RenderMode)value;
 
-                    if (value)
+                    if (logic.m_renderMode == RenderMode.Linked)
                         logic.m_flameFullColor = logic.m_flameIdleColor;
 
                     logic.UpdateFlames();
@@ -389,9 +419,20 @@ namespace DarkVault.ThrusterExtensions
                 }
             };
 
-            linkColorsCheckbox.SupportsMultipleBlocks = true;
+            renderMode.Writer = (block, sb) =>
+            {
+                if (block == null || block.GameLogic == null)
+                    return;
 
-            m_customControls.Add(linkColorsCheckbox);
+                var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
+
+                if (logic != null)
+                    sb.Append(logic.m_renderMode.ToString());
+            };
+
+            renderMode.SupportsMultipleBlocks = true;
+
+            m_customControls.Add(renderMode);
 
             var hideFlamesCheckbox = MyAPIGateway.TerminalControls.CreateControl<IMyTerminalControlCheckbox, IMyThrust>("HideThrustFlames");
 
@@ -469,7 +510,7 @@ namespace DarkVault.ThrusterExtensions
                     logic.m_flameFullColor = blockDefinition.FlameFullColor;
 
                     if (logic.m_flameFullColor != logic.m_flameIdleColor)                    
-                        logic.m_flameColorsLinked = false;
+                        logic.m_renderMode = RenderMode.Blended;
 
                     foreach (var control in m_customControls)
                     {
@@ -488,7 +529,11 @@ namespace DarkVault.ThrusterExtensions
 
         private void LoadFlameDummies()
         {
+            if (Entity == null)
+                return;
+
             IMyModel model = Entity.Model;
+
             if (model == null)
                 return;
 
@@ -597,7 +642,7 @@ namespace DarkVault.ThrusterExtensions
             SerializeVector(FlameIdleColor, sb);
             SerializeVector(FlameFullColor, sb);
             sb.Append($"{m_flameColorsLocked}\n");
-            sb.Append($"{m_flameColorsLinked}\n");
+            sb.Append($"{m_renderMode.ToString()}\n");
             sb.Append($"{m_hideFlames}\n");
 
             m_thruster.CustomDataChanged -= OnCustomDataChanged;
@@ -607,6 +652,9 @@ namespace DarkVault.ThrusterExtensions
 
         private void UpdateFlames()
         {
+            if (Entity == null)
+                return;
+
             var thrust = m_thruster as MyThrust;
             if (thrust == null || thrust.CubeGrid.Physics == null || thrust.Light == null)
                 return;
@@ -627,8 +675,17 @@ namespace DarkVault.ThrusterExtensions
             }
             else
             {
-                blockDefinition.FlameIdleColor = m_flameIdleColor;
-                blockDefinition.FlameFullColor = m_flameFullColor;
+                if (m_renderMode == RenderMode.Separate)
+                {
+                    var color = thrust.CurrentStrength > 0 ? m_flameFullColor : m_flameIdleColor;
+                    blockDefinition.FlameIdleColor = color;
+                    blockDefinition.FlameFullColor = color;
+                }
+                else
+                {
+                    blockDefinition.FlameIdleColor = m_flameIdleColor;
+                    blockDefinition.FlameFullColor = m_flameFullColor;
+                }
             }
 
             ((MyRenderComponentThrust)thrust.Render).UpdateFlameAnimatorData();
