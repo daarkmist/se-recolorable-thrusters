@@ -20,7 +20,7 @@ using VRageMath;
 using VRageRender;
 using VRageRender.Import;
 
-namespace DarkVault.ThrusterExtensions
+namespace DarkVault.RecolorableThrusters
 {
 
     [MyEntityComponentDescriptor(typeof(MyObjectBuilder_Thrust), false)]
@@ -78,7 +78,13 @@ namespace DarkVault.ThrusterExtensions
 
         public bool HasFlames
         {
-            get { return m_hasFlames; }
+            get
+            {
+                if (!m_hasFlames.HasValue)
+                    CheckFlameDummies();
+                
+                return m_hasFlames ?? true;
+            }
         }
 
         private static List<IMyTerminalControl> m_customControls = new List<IMyTerminalControl>();
@@ -90,7 +96,7 @@ namespace DarkVault.ThrusterExtensions
         private bool m_hideFlames = false;
         private IMyThrust m_thruster;
         private bool m_initialized = false;
-        private bool m_hasFlames = false;
+        private bool? m_hasFlames = null;
         private float m_buildRatio;
 
         public override void Init(MyObjectBuilder_EntityBase objectBuilder)
@@ -114,14 +120,14 @@ namespace DarkVault.ThrusterExtensions
             m_thruster.CustomDataChanged += OnCustomDataChanged;
             m_thruster.CubeGrid.OnBlockIntegrityChanged += OnIntegrityChanged;
 
-            NeedsUpdate |= (MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_10TH_FRAME);
+            NeedsUpdate |= (MyEntityUpdateEnum.BEFORE_NEXT_FRAME | MyEntityUpdateEnum.EACH_100TH_FRAME);
 
             m_initialized = true;
         }
 
         public override void UpdateOnceBeforeFrame()
         {
-            LoadFlameDummies();
+            CheckFlameDummies();
             UpdateFlames();
         }
 
@@ -187,20 +193,23 @@ namespace DarkVault.ThrusterExtensions
             }
         }
 
-        public override void UpdateAfterSimulation10()
+        public override void UpdateAfterSimulation100()
         {
             UpdateFlames();
         }
 
         public void OnIntegrityChanged(IMySlimBlock block)
         {
+            if (block.FatBlock != m_thruster)
+                return;
+
             var thrust = m_thruster as MyThrust;
             var blockDefinition = thrust.BlockDefinition;
 
             if (blockDefinition.ModelChangeIsNeeded(m_buildRatio, block.BuildLevelRatio) ||
                 blockDefinition.ModelChangeIsNeeded(block.BuildLevelRatio, m_buildRatio))
             {
-                LoadFlameDummies();
+                CheckFlameDummies();
                 UpdateFlames();
             }
 
@@ -284,7 +293,7 @@ namespace DarkVault.ThrusterExtensions
 
             m_customControls.Add(color);
 
-            var propertyIC = MyAPIGateway.TerminalControls.CreateProperty<Vector4, IMyThrust>("FlameIdleColorOverride");
+            var propertyIC = MyAPIGateway.TerminalControls.CreateProperty<Color, IMyThrust>("FlameIdleColorOverride");
                   
             propertyIC.SupportsMultipleBlocks = false;
             propertyIC.Getter = (block) =>
@@ -293,7 +302,7 @@ namespace DarkVault.ThrusterExtensions
                     return Vector4.Zero;
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
-                return logic != null ? logic.FlameIdleColor : Vector4.Zero;
+                return logic != null ? (Color)logic.FlameIdleColor : Color.Transparent;
             };
 
             propertyIC.Setter = (block, value) =>
@@ -305,7 +314,8 @@ namespace DarkVault.ThrusterExtensions
 
                 if (logic != null)
                 {
-                    logic.FlameIdleColor = new Vector4(value.X, value.Y, value.Z, 0.75f);
+                    logic.m_flameIdleColor = value.ToVector4();
+                    logic.m_flameIdleColor.W = 0.75f;
                     
                     if (logic.m_renderMode == RenderMode.Linked)
                         logic.FlameFullColor = logic.FlameIdleColor;
@@ -353,7 +363,7 @@ namespace DarkVault.ThrusterExtensions
 
             m_customControls.Add(color);
 
-            var propertyFC = MyAPIGateway.TerminalControls.CreateProperty<Vector4, IMyThrust>("FlameFullColorOverride");
+            var propertyFC = MyAPIGateway.TerminalControls.CreateProperty<Color, IMyThrust>("FlameFullColorOverride");
                   
             propertyFC.SupportsMultipleBlocks = false;
             propertyFC.Getter = (block) =>
@@ -362,7 +372,7 @@ namespace DarkVault.ThrusterExtensions
                     return Vector4.Zero;
 
                 var logic = block.GameLogic.GetAs<RecolorableThrustFlameLogic>();
-                return logic != null ? logic.FlameFullColor : Vector4.Zero;
+                return logic != null ? (Color)logic.FlameFullColor : Color.Transparent;
             };
 
             propertyFC.Setter = (block, value) =>
@@ -374,7 +384,8 @@ namespace DarkVault.ThrusterExtensions
                 
                 if (logic != null && logic.m_renderMode != RenderMode.Linked)
                 {
-                    logic.FlameFullColor = new Vector4(value.X, value.Y, value.Z, 0.75f);
+                    logic.m_flameFullColor = value.ToVector4();
+                    logic.m_flameFullColor.W = 0.75f;
                 }
             };
 
@@ -527,7 +538,7 @@ namespace DarkVault.ThrusterExtensions
             m_customControls.Add(resetButton);
         }
 
-        private void LoadFlameDummies()
+        private void CheckFlameDummies()
         {
             if (Entity == null)
                 return;
@@ -656,7 +667,7 @@ namespace DarkVault.ThrusterExtensions
                 return;
 
             var thrust = m_thruster as MyThrust;
-            if (thrust == null || thrust.CubeGrid.Physics == null || thrust.Light == null)
+            if (thrust == null || thrust.CubeGrid.Physics == null)
                 return;
 
             uint renderObjectID = Entity.Render.GetRenderObjectID();
@@ -677,7 +688,7 @@ namespace DarkVault.ThrusterExtensions
             {
                 if (m_renderMode == RenderMode.Separate)
                 {
-                    var color = thrust.CurrentStrength > 0 ? m_flameFullColor : m_flameIdleColor;
+                    var color = thrust.CurrentStrength > 0.001f ? m_flameFullColor : m_flameIdleColor;
                     blockDefinition.FlameIdleColor = color;
                     blockDefinition.FlameFullColor = color;
                 }
